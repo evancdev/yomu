@@ -40,6 +40,7 @@ app.listen(config.port, () => {
   console.log(`\n  Yomu server → http://localhost:${config.port}`);
   console.log(`  LLM provider:   ${config.llm.provider}`);
   console.log(`  Image provider: ${config.image.provider}`);
+  console.log(`  Delivery store: ${config.storage.provider}`);
   if (!fs.existsSync(distDir)) {
     console.log(`  (dev) client served by Vite → http://localhost:5173\n`);
   }

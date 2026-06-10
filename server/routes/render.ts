@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { RenderResponse, RenderedPanel } from "@shared/types";
-import { createImageProvider } from "../providers/registry";
+import { createImageProvider, createDeliveryStore } from "../providers/registry";
 
 const dialogueSchema = z.object({
   speaker: z.string(),
@@ -65,7 +65,30 @@ renderRouter.post("/render", async (req, res) => {
     const rendered: RenderedPanel[] = await mapWithConcurrency(panels, 3, (panel) =>
       image.renderPanel({ panel, characters: script.characters, style: script.style }),
     );
-    const response: RenderResponse = { panels: rendered };
+
+    // Optional delivery layer: persist successful panels to durable object
+    // storage and swap in their CDN/Image-and-Video-Manager URLs. Best-effort —
+    // a failed upload (or no-op store) leaves the direct provider URL in place,
+    // and failure placeholders are never persisted.
+    const store = createDeliveryStore();
+    const delivered: RenderedPanel[] =
+      store.name === "none"
+        ? rendered
+        : await mapWithConcurrency(rendered, 4, async (panel) => {
+            if (panel.error) return panel;
+            try {
+              const imageUrl = await store.persist({
+                panelId: panel.panelId,
+                imageUrl: panel.imageUrl,
+              });
+              return { ...panel, imageUrl };
+            } catch (err) {
+              console.warn(`[/api/render] delivery persist failed for ${panel.panelId}:`, err);
+              return panel;
+            }
+          });
+
+    const response: RenderResponse = { panels: delivered };
     res.json(response);
   } catch (err) {
     console.error("[/api/render] failed:", err);
